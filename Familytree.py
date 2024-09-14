@@ -1,9 +1,7 @@
 import sqlite3
 import tkinter as tk
 from tkinter import messagebox
-from tkinter import simpledialog
 from tkinter import ttk
-import re
 
 class FamilyTreeApp:
     def __init__(self, root):
@@ -26,7 +24,9 @@ class FamilyTreeApp:
                 first_name TEXT NOT NULL,
                 last_name TEXT NOT NULL,
                 gender TEXT,
-                birth_date TEXT,
+                birth_year INTEGER,
+                birth_month INTEGER,
+                birth_day INTEGER,
                 mother_id INTEGER,
                 father_id INTEGER,
                 FOREIGN KEY(mother_id) REFERENCES members(id),
@@ -70,27 +70,38 @@ class FamilyTreeApp:
         # Gender
         ttk.Label(self.tab1, text="Gender:").grid(column=0, row=2, padx=10, pady=5, sticky='W')
         self.gender_var = tk.StringVar()
-        self.gender_combo = ttk.Combobox(self.tab1, textvariable=self.gender_var, values=["Male", "Female", "Other"])
+        self.gender_combo = ttk.Combobox(self.tab1, textvariable=self.gender_var, values=["Male", "Female", "Other"], state="readonly")
         self.gender_combo.grid(column=1, row=2, padx=10, pady=5)
+        self.gender_combo.set('')  # Default to empty
 
-        # Birth Date
-        ttk.Label(self.tab1, text="Birth Date (YYYY-MM-DD):").grid(column=0, row=3, padx=10, pady=5, sticky='W')
-        self.birth_date_entry = ttk.Entry(self.tab1, width=30)
-        self.birth_date_entry.grid(column=1, row=3, padx=10, pady=5)
+        # Birth Year
+        ttk.Label(self.tab1, text="Birth Year:").grid(column=0, row=3, padx=10, pady=5, sticky='W')
+        self.birth_year_spin = ttk.Spinbox(self.tab1, from_=1900, to=2100, width=28)
+        self.birth_year_spin.grid(column=1, row=3, padx=10, pady=5)
+
+        # Birth Month
+        ttk.Label(self.tab1, text="Birth Month:").grid(column=0, row=4, padx=10, pady=5, sticky='W')
+        self.birth_month_spin = ttk.Spinbox(self.tab1, from_=1, to=12, width=28)
+        self.birth_month_spin.grid(column=1, row=4, padx=10, pady=5)
+
+        # Birth Day
+        ttk.Label(self.tab1, text="Birth Day:").grid(column=0, row=5, padx=10, pady=5, sticky='W')
+        self.birth_day_spin = ttk.Spinbox(self.tab1, from_=1, to=31, width=28)
+        self.birth_day_spin.grid(column=1, row=5, padx=10, pady=5)
 
         # Mother's Full Name
-        ttk.Label(self.tab1, text="Mother's Full Name:").grid(column=0, row=4, padx=10, pady=5, sticky='W')
+        ttk.Label(self.tab1, text="Mother's Full Name:").grid(column=0, row=6, padx=10, pady=5, sticky='W')
         self.mother_name_entry = ttk.Entry(self.tab1, width=30)
-        self.mother_name_entry.grid(column=1, row=4, padx=10, pady=5)
+        self.mother_name_entry.grid(column=1, row=6, padx=10, pady=5)
 
         # Father's Full Name
-        ttk.Label(self.tab1, text="Father's Full Name:").grid(column=0, row=5, padx=10, pady=5, sticky='W')
+        ttk.Label(self.tab1, text="Father's Full Name:").grid(column=0, row=7, padx=10, pady=5, sticky='W')
         self.father_name_entry = ttk.Entry(self.tab1, width=30)
-        self.father_name_entry.grid(column=1, row=5, padx=10, pady=5)
+        self.father_name_entry.grid(column=1, row=7, padx=10, pady=5)
 
         # Add Member Button
         self.add_member_button = ttk.Button(self.tab1, text="Add Member", command=self.add_member)
-        self.add_member_button.grid(column=1, row=6, padx=10, pady=10, sticky='E')
+        self.add_member_button.grid(column=1, row=8, padx=10, pady=10, sticky='E')
 
     def create_view_tree_tab(self):
         self.tree_text = tk.Text(self.tab2, wrap='none')
@@ -116,7 +127,15 @@ class FamilyTreeApp:
             return
 
         gender = self.gender_var.get().strip() or None
-        birth_date = self.validate_date(self.birth_date_entry.get().strip())
+
+        # Get and validate birth date components
+        birth_year = self.birth_year_spin.get().strip()
+        birth_month = self.birth_month_spin.get().strip()
+        birth_day = self.birth_day_spin.get().strip()
+
+        birth_year_int, birth_month_int, birth_day_int = self.validate_birth_date(birth_year, birth_month, birth_day)
+        if birth_year_int is None:
+            return  # Error message already shown in validate_birth_date
 
         mother_full_name = self.mother_name_entry.get().strip() or None
         father_full_name = self.father_name_entry.get().strip() or None
@@ -135,9 +154,9 @@ class FamilyTreeApp:
 
         try:
             self.cursor.execute('''
-                INSERT INTO members (first_name, last_name, gender, birth_date, mother_id, father_id)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (first_name, last_name, gender, birth_date, mother_id, father_id))
+                INSERT INTO members (first_name, last_name, gender, birth_year, birth_month, birth_day, mother_id, father_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (first_name, last_name, gender, birth_year_int, birth_month_int, birth_day_int, mother_id, father_id))
             self.conn.commit()
             messagebox.showinfo("Success", f"Added member: {first_name} {last_name}")
             self.clear_entries()
@@ -148,18 +167,47 @@ class FamilyTreeApp:
         self.first_name_entry.delete(0, tk.END)
         self.last_name_entry.delete(0, tk.END)
         self.gender_var.set('')
-        self.birth_date_entry.delete(0, tk.END)
+        self.birth_year_spin.delete(0, tk.END)
+        self.birth_month_spin.delete(0, tk.END)
+        self.birth_day_spin.delete(0, tk.END)
         self.mother_name_entry.delete(0, tk.END)
         self.father_name_entry.delete(0, tk.END)
 
-    def validate_date(self, date_text):
-        if not date_text:
-            return None
-        if re.match(r'^\d{4}-\d{2}-\d{2}$', date_text):
-            return date_text
-        else:
-            messagebox.showerror("Error", "Date must be in YYYY-MM-DD format.")
-            return None
+    def validate_birth_date(self, year, month, day):
+        # Ensure all fields are provided
+        if not year or not month or not day:
+            messagebox.showerror("Error", "Birth year, month, and day are required.")
+            return None, None, None
+
+        # Validate year
+        try:
+            birth_year_int = int(year)
+            if not (1900 <= birth_year_int <= 2100):
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Error", "Birth year must be a number between 1900 and 2100.")
+            return None, None, None
+
+        # Validate month
+        try:
+            birth_month_int = int(month)
+            if not (1 <= birth_month_int <= 12):
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Error", "Birth month must be a number between 1 and 12.")
+            return None, None, None
+
+        # Validate day
+        try:
+            birth_day_int = int(day)
+            if not (1 <= birth_day_int <= 31):
+                raise ValueError
+            # Optional: More precise day validation based on month and leap years
+        except ValueError:
+            messagebox.showerror("Error", "Birth day must be a number between 1 and 31.")
+            return None, None, None
+
+        return birth_year_int, birth_month_int, birth_day_int
 
     def _get_member_id_by_full_name(self, full_name):
         names = full_name.strip().split()
@@ -241,12 +289,12 @@ class FamilyTreeApp:
         dot = Digraph(comment='Family Tree')
 
         # Add nodes for each member with attributes
-        self.cursor.execute('SELECT id, first_name, last_name, gender, birth_date FROM members')
+        self.cursor.execute('SELECT id, first_name, last_name, gender, birth_year, birth_month, birth_day FROM members')
         members = self.cursor.fetchall()
-        for member_id, first_name, last_name, gender, birth_date in members:
+        for member_id, first_name, last_name, gender, birth_year, birth_month, birth_day in members:
             label = f"{first_name} {last_name}"
-            if birth_date:
-                label += f"\nBorn: {birth_date}"
+            if birth_year and birth_month and birth_day:
+                label += f"\nBorn: {birth_year}-{birth_month:02d}-{birth_day:02d}"
             shape = 'ellipse'
             color = 'black'
             if gender:
@@ -267,8 +315,11 @@ class FamilyTreeApp:
             if father_id:
                 dot.edge(str(father_id), str(child_id), label='father', color='blue')
 
-        dot.render('family_tree.gv', view=True)
-        messagebox.showinfo("Success", "Family tree visualized. Check the 'family_tree.gv.pdf' file.")
+        try:
+            dot.render('family_tree.gv', view=True)
+            messagebox.showinfo("Success", "Family tree visualized. Check the 'family_tree.gv.pdf' file.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to render the family tree: {e}")
 
     def on_closing(self):
         self.conn.close()
