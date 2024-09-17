@@ -2,6 +2,8 @@ import sqlite3
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import ttk
+from PIL import ImageGrab  # For exporting canvas as PNG
+
 
 class FamilyTreeApp:
     def __init__(self, root):
@@ -128,7 +130,6 @@ class FamilyTreeApp:
         self.refresh_button = ttk.Button(self.tab2, text="Refresh Tree", command=self.display_tree)
         self.refresh_button.pack(pady=10)
 
-    # The missing display_tree method
     def display_tree(self):
         self.tree_text.delete(1.0, tk.END)  # Clear previous content
 
@@ -169,14 +170,17 @@ class FamilyTreeApp:
 
     def create_visualize_tab(self):
         # Create Canvas for visualization
-        self.canvas = tk.Canvas(self.tab3, bg="white")
+        self.canvas = tk.Canvas(self.tab3, bg="white", width=800, height=600)
         self.canvas.pack(expand=True, fill='both')
 
         # Visualize Button
         self.visualize_button = ttk.Button(self.tab3, text="Visualize Family Tree", command=self.visualize_tree_canvas)
-        self.visualize_button.pack(pady=20)
+        self.visualize_button.pack(pady=10)
 
-    # Adding the missing visualize_tree_canvas method
+        # Export Button
+        self.export_button = ttk.Button(self.tab3, text="Export as PNG", command=self.export_canvas_as_png)
+        self.export_button.pack(pady=10)
+
     def visualize_tree_canvas(self):
         self.canvas.delete("all")  # Clear canvas for fresh drawing
         roots = self.get_roots()
@@ -222,10 +226,10 @@ class FamilyTreeApp:
         self.member2_combo = ttk.Combobox(self.tab4, width=30, state="readonly")
         self.member2_combo.grid(column=1, row=1, padx=10, pady=5)
 
-        # Relationship Type Entry
+        # Relationship Type Dropdown
         ttk.Label(self.tab4, text="Relationship Type:").grid(column=0, row=2, padx=10, pady=5, sticky='W')
-        self.relationship_type_entry = ttk.Entry(self.tab4, width=30)
-        self.relationship_type_entry.grid(column=1, row=2, padx=10, pady=5)
+        self.relationship_type_combo = ttk.Combobox(self.tab4, values=["Parent", "Sibling", "Spouse", "Grandparent"], state="readonly", width=30)
+        self.relationship_type_combo.grid(column=1, row=2, padx=10, pady=5)
 
         # Add Relationship Button
         self.add_relationship_button = ttk.Button(self.tab4, text="Add Relationship", command=self.add_relationship)
@@ -244,11 +248,10 @@ class FamilyTreeApp:
             self.member1_combo['values'] = member_names
             self.member2_combo['values'] = member_names
 
-    # Adding the missing add_relationship method
     def add_relationship(self):
         member1_full_name = self.member1_combo.get().strip()
         member2_full_name = self.member2_combo.get().strip()
-        relationship_type = self.relationship_type_entry.get().strip()
+        relationship_type = self.relationship_type_combo.get().strip()
 
         if not member1_full_name or not member2_full_name or not relationship_type:
             messagebox.showerror("Error", "Please fill in all fields.")
@@ -350,7 +353,6 @@ class FamilyTreeApp:
             birth_day_int = int(day)
             if not (1 <= birth_day_int <= 31):
                 raise ValueError
-            # Optional: More precise day validation based on month and leap years
         except ValueError:
             messagebox.showerror("Error", "Birth day must be a number between 1 and 31.")
             return None, None, None
@@ -396,16 +398,32 @@ class FamilyTreeApp:
             to_visit.extend(child for child in children if child not in visited)
         return False
 
+    def export_canvas_as_png(self):
+        """ Export the canvas as a PNG file using the Pillow library. """
+        try:
+            x = self.canvas.winfo_rootx()
+            y = self.canvas.winfo_rooty()
+            x1 = x + self.canvas.winfo_width()
+            y1 = y + self.canvas.winfo_height()
+
+            # Capture the screen region where the canvas is located
+            ImageGrab.grab().crop((x, y, x1, y1)).save("family_tree.png")
+            messagebox.showinfo("Success", "Family tree saved as family_tree.png")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save image: {e}")
+
     def on_closing(self):
         self.conn.commit()  # Ensure any pending transactions are committed
         self.conn.close()  # Close the database connection properly to save data
         self.root.destroy()
+
 
 def main():
     root = tk.Tk()
     app = FamilyTreeApp(root)
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()
+
 
 if __name__ == "__main__":
     main()
