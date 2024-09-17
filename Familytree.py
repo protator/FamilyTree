@@ -33,6 +33,18 @@ class FamilyTreeApp:
                 FOREIGN KEY(father_id) REFERENCES members(id)
             )
         ''')
+
+        # Create table for relationships
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS relationships (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                member1_id INTEGER,
+                member2_id INTEGER,
+                relationship_type TEXT,
+                FOREIGN KEY(member1_id) REFERENCES members(id),
+                FOREIGN KEY(member2_id) REFERENCES members(id)
+            )
+        ''')
         self.conn.commit()
 
     def create_widgets(self):
@@ -53,6 +65,11 @@ class FamilyTreeApp:
         self.tab3 = ttk.Frame(self.tab_control)
         self.tab_control.add(self.tab3, text='Visualize Family Tree')
         self.create_visualize_tab()
+
+        # Tab4: Define Relationships
+        self.tab4 = ttk.Frame(self.tab_control)
+        self.tab_control.add(self.tab4, text='Define Relationships')
+        self.create_relationship_tab()
 
         self.tab_control.pack(expand=1, fill='both')
 
@@ -111,13 +128,144 @@ class FamilyTreeApp:
         self.refresh_button = ttk.Button(self.tab2, text="Refresh Tree", command=self.display_tree)
         self.refresh_button.pack(pady=10)
 
+    # The missing display_tree method
+    def display_tree(self):
+        self.tree_text.delete(1.0, tk.END)  # Clear previous content
+
+        roots = self.get_roots()
+        visited = set()
+
+        # Recursively display the family tree
+        for root_id, first_name, last_name in roots:
+            full_name = f"{first_name} {last_name}"
+            self.display_tree_recursive(root_id, full_name, 0, visited)
+
+    def get_roots(self):
+        """ Get members with no parents (root members) """
+        self.cursor.execute('''
+            SELECT id, first_name, last_name FROM members
+            WHERE mother_id IS NULL AND father_id IS NULL
+        ''')
+        return self.cursor.fetchall()
+
+    def display_tree_recursive(self, person_id, full_name, level, visited):
+        """ Display tree recursively """
+        if person_id in visited:
+            return
+        visited.add(person_id)
+
+        self.tree_text.insert(tk.END, '    ' * level + f"- {full_name}\n")
+
+        # Get children of the current person
+        self.cursor.execute('''
+            SELECT id, first_name, last_name FROM members
+            WHERE mother_id = ? OR father_id = ?
+        ''', (person_id, person_id))
+        children = self.cursor.fetchall()
+
+        for child_id, first_name, last_name in children:
+            child_full_name = f"{first_name} {last_name}"
+            self.display_tree_recursive(child_id, child_full_name, level + 1, visited)
+
     def create_visualize_tab(self):
+        # Create Canvas for visualization
+        self.canvas = tk.Canvas(self.tab3, bg="white")
+        self.canvas.pack(expand=True, fill='both')
+
         # Visualize Button
-        self.visualize_button = ttk.Button(self.tab3, text="Visualize Family Tree", command=self.visualize_tree)
+        self.visualize_button = ttk.Button(self.tab3, text="Visualize Family Tree", command=self.visualize_tree_canvas)
         self.visualize_button.pack(pady=20)
 
-        # Instructions
-        ttk.Label(self.tab3, text="The family tree will be generated and opened as a PDF file.").pack()
+    # Adding the missing visualize_tree_canvas method
+    def visualize_tree_canvas(self):
+        self.canvas.delete("all")  # Clear canvas for fresh drawing
+        roots = self.get_roots()
+        visited = set()
+
+        # Starting position for the root member
+        for root_id, first_name, last_name in roots:
+            self.visualize_tree_recursive(root_id, f"{first_name} {last_name}", 400, 50, visited)
+
+    def visualize_tree_recursive(self, person_id, full_name, x, y, visited):
+        if person_id in visited:
+            return
+        visited.add(person_id)
+
+        node_width = 100
+        self.canvas.create_text(x, y, text=full_name, tags="node")
+        self.canvas.create_rectangle(x - node_width // 2, y - 15, x + node_width // 2, y + 15, outline="black", tags="node")
+
+        # Get children of the current person
+        self.cursor.execute('''
+            SELECT id, first_name, last_name FROM members
+            WHERE mother_id = ? OR father_id = ?
+        ''', (person_id, person_id))
+        children = self.cursor.fetchall()
+
+        child_x_offset = 150
+        child_y_offset = 100
+
+        for i, (child_id, first_name, last_name) in enumerate(children):
+            child_x = x + (i - len(children) // 2) * child_x_offset
+            child_y = y + child_y_offset
+            self.canvas.create_line(x, y + 15, child_x, child_y - 15)
+            self.visualize_tree_recursive(child_id, f"{first_name} {last_name}", child_x, child_y, visited)
+
+    def create_relationship_tab(self):
+        # Member 1 Dropdown
+        ttk.Label(self.tab4, text="Member 1:").grid(column=0, row=0, padx=10, pady=5, sticky='W')
+        self.member1_combo = ttk.Combobox(self.tab4, width=30, state="readonly")
+        self.member1_combo.grid(column=1, row=0, padx=10, pady=5)
+
+        # Member 2 Dropdown
+        ttk.Label(self.tab4, text="Member 2:").grid(column=0, row=1, padx=10, pady=5, sticky='W')
+        self.member2_combo = ttk.Combobox(self.tab4, width=30, state="readonly")
+        self.member2_combo.grid(column=1, row=1, padx=10, pady=5)
+
+        # Relationship Type Entry
+        ttk.Label(self.tab4, text="Relationship Type:").grid(column=0, row=2, padx=10, pady=5, sticky='W')
+        self.relationship_type_entry = ttk.Entry(self.tab4, width=30)
+        self.relationship_type_entry.grid(column=1, row=2, padx=10, pady=5)
+
+        # Add Relationship Button
+        self.add_relationship_button = ttk.Button(self.tab4, text="Add Relationship", command=self.add_relationship)
+        self.add_relationship_button.grid(column=1, row=3, padx=10, pady=10, sticky='E')
+
+        # Populate member combo boxes when switching to the relationship tab
+        self.tab_control.bind("<<NotebookTabChanged>>", self.populate_member_combos)
+
+    def populate_member_combos(self, event=None):
+        if self.tab_control.index("current") == 3:  # Only populate if we're on the "Define Relationships" tab
+            self.cursor.execute('SELECT id, first_name, last_name FROM members')
+            members = self.cursor.fetchall()
+
+            # Clear previous values
+            member_names = [f"{first_name} {last_name}" for _, first_name, last_name in members]
+            self.member1_combo['values'] = member_names
+            self.member2_combo['values'] = member_names
+
+    # Adding the missing add_relationship method
+    def add_relationship(self):
+        member1_full_name = self.member1_combo.get().strip()
+        member2_full_name = self.member2_combo.get().strip()
+        relationship_type = self.relationship_type_entry.get().strip()
+
+        if not member1_full_name or not member2_full_name or not relationship_type:
+            messagebox.showerror("Error", "Please fill in all fields.")
+            return
+
+        member1_id = self._get_member_id_by_full_name(member1_full_name)
+        member2_id = self._get_member_id_by_full_name(member2_full_name)
+
+        if member1_id and member2_id:
+            self.cursor.execute('''
+                INSERT INTO relationships (member1_id, member2_id, relationship_type)
+                VALUES (?, ?, ?)
+            ''', (member1_id, member2_id, relationship_type))
+            self.conn.commit()
+            messagebox.showinfo("Success", f"Added relationship: {relationship_type} between {member1_full_name} and {member2_full_name}")
+        else:
+            messagebox.showerror("Error", "One or both members not found.")
 
     def add_member(self):
         first_name = self.first_name_entry.get().strip()
@@ -157,7 +305,7 @@ class FamilyTreeApp:
                 INSERT INTO members (first_name, last_name, gender, birth_year, birth_month, birth_day, mother_id, father_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''', (first_name, last_name, gender, birth_year_int, birth_month_int, birth_day_int, mother_id, father_id))
-            self.conn.commit()
+            self.conn.commit()  # Ensure changes are saved to the database
             messagebox.showinfo("Success", f"Added member: {first_name} {last_name}")
             self.clear_entries()
         except sqlite3.IntegrityError:
@@ -248,81 +396,9 @@ class FamilyTreeApp:
             to_visit.extend(child for child in children if child not in visited)
         return False
 
-    def display_tree(self):
-        self.tree_text.delete(1.0, tk.END)
-        roots = self.get_roots()
-        visited = set()
-        for root_id, first_name, last_name in roots:
-            full_name = f"{first_name} {last_name}"
-            self.display_tree_recursive(root_id, full_name, 0, visited)
-
-    def get_roots(self):
-        # Find all root members (members without parents)
-        self.cursor.execute('''
-            SELECT id, first_name, last_name FROM members
-            WHERE mother_id IS NULL AND father_id IS NULL
-        ''')
-        return self.cursor.fetchall()
-
-    def display_tree_recursive(self, person_id, full_name, level, visited):
-        if person_id in visited:
-            return
-        visited.add(person_id)
-        self.tree_text.insert(tk.END, '    ' * level + f"- {full_name}\n")
-        # Get children of the current person
-        self.cursor.execute('''
-            SELECT id, first_name, last_name FROM members
-            WHERE mother_id = ? OR father_id = ?
-        ''', (person_id, person_id))
-        children = self.cursor.fetchall()
-        for child_id, first_name, last_name in children:
-            child_full_name = f"{first_name} {last_name}"
-            self.display_tree_recursive(child_id, child_full_name, level + 1, visited)
-
-    def visualize_tree(self):
-        try:
-            from graphviz import Digraph
-        except ImportError:
-            messagebox.showerror("Error", "Graphviz is not installed. Please install it to use this feature.")
-            return
-
-        dot = Digraph(comment='Family Tree')
-
-        # Add nodes for each member with attributes
-        self.cursor.execute('SELECT id, first_name, last_name, gender, birth_year, birth_month, birth_day FROM members')
-        members = self.cursor.fetchall()
-        for member_id, first_name, last_name, gender, birth_year, birth_month, birth_day in members:
-            label = f"{first_name} {last_name}"
-            if birth_year and birth_month and birth_day:
-                label += f"\nBorn: {birth_year}-{birth_month:02d}-{birth_day:02d}"
-            shape = 'ellipse'
-            color = 'black'
-            if gender:
-                if gender.lower() == 'male':
-                    shape = 'box'
-                    color = 'blue'
-                elif gender.lower() == 'female':
-                    shape = 'oval'
-                    color = 'red'
-            dot.node(str(member_id), label, shape=shape, color=color)
-
-        # Add edges for relationships
-        self.cursor.execute('SELECT id, mother_id, father_id FROM members')
-        relationships = self.cursor.fetchall()
-        for child_id, mother_id, father_id in relationships:
-            if mother_id:
-                dot.edge(str(mother_id), str(child_id), label='mother', color='red')
-            if father_id:
-                dot.edge(str(father_id), str(child_id), label='father', color='blue')
-
-        try:
-            dot.render('family_tree.gv', view=True)
-            messagebox.showinfo("Success", "Family tree visualized. Check the 'family_tree.gv.pdf' file.")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to render the family tree: {e}")
-
     def on_closing(self):
-        self.conn.close()
+        self.conn.commit()  # Ensure any pending transactions are committed
+        self.conn.close()  # Close the database connection properly to save data
         self.root.destroy()
 
 def main():
